@@ -20,8 +20,8 @@ const heartbeatTTL = 10 // seconds
 
 type ClientPool struct {
 	Clients map[net.Addr]int64 // client id -> timestamp last seen
-	server net.PacketConn
-	mux sync.Mutex
+	server  net.PacketConn
+	mux     sync.Mutex
 }
 
 // Constructor for ClientPool
@@ -35,7 +35,7 @@ func MakeClientPool(address string) (ClientPool, error) {
 
 	return ClientPool{
 		Clients: make(map[net.Addr]int64),
-		server: pc,
+		server:  pc,
 	}, nil
 }
 
@@ -71,8 +71,8 @@ func (cp *ClientPool) Listen() (channel chan error) {
 			}
 
 			cp.mux.Lock()
-      cp.Clients[addr] = time.Now().Unix()
-      cp.mux.Unlock()
+			cp.Clients[addr] = time.Now().Unix()
+			cp.mux.Unlock()
 		}
 	}()
 
@@ -86,7 +86,7 @@ func (cp *ClientPool) liveClients() []net.Addr {
 	clients := make([]net.Addr, 0)
 	now := time.Now().Unix()
 	for addr := range cp.Clients {
-		if now - cp.Clients[addr] < heartbeatTTL {
+		if now-cp.Clients[addr] < heartbeatTTL {
 			clients = append(clients, addr)
 		}
 	}

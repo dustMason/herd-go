@@ -30,13 +30,13 @@ func main() {
 
 	midiChan := in.Listen()
 
-  cp, err := MakeClientPool("127.0.0.1:5000")
+	cp, err := MakeClientPool("127.0.0.1:5000")
 	if err != nil {
 		log.Fatal(err)
 	}
-  clientPoolDoneChan := cp.Listen()
+	clientPoolDoneChan := cp.Listen()
 
-  for {
+	for {
 		select {
 		case err := <-clientPoolDoneChan:
 			log.Fatal(err)
