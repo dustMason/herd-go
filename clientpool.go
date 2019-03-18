@@ -1,27 +1,28 @@
 package main
 
 import (
+	"container/list"
 	"log"
 	"net"
 	"sync"
 	"time"
-)
 
-// plans
-// - split clients up into groups based on desired startup options (given at runtime)
-// - Clients should be a data structure with these properties:
-//   - fast (better than O(n)) listing of all clients updated in the last n seconds. (use periodic bucketing?)
-//   - fixed time updating of a single client
-// - This should probably be solved in the same way an LRU cache is implemented. allocate a fixed size
-//   list for Clients, keep recently seen clients at the top of the list and let old ones fall off.
+	"github.com/golang/protobuf/proto"
+)
 
 const maxBufferSize = 1024
 const heartbeatTTL = 10 // seconds
 
 type ClientPool struct {
-	Clients map[net.Addr]int64 // client id -> timestamp last seen
-	server  net.PacketConn
-	mux     sync.Mutex
+	clients   list.List
+	clientMap map[net.Addr]*list.Element
+	server    net.PacketConn
+	mux       sync.Mutex
+}
+
+type Client struct {
+	Addr      net.Addr
+	Timestamp int64
 }
 
 // Constructor for ClientPool
@@ -34,21 +35,39 @@ func MakeClientPool(address string) (ClientPool, error) {
 	log.Printf("Listening at %s\n", address)
 
 	return ClientPool{
-		Clients: make(map[net.Addr]int64),
-		server:  pc,
+		clientMap: make(map[net.Addr]*list.Element),
+		clients:   *list.New(),
+		server:    pc,
 	}, nil
 }
 
-// Broadcasts a message to all "live" clients
-func (cp *ClientPool) Send(message string) error {
-	clients := cp.liveClients()
-	for _, addr := range clients {
-		_, err := cp.server.WriteTo([]byte(message), addr)
-		if err != nil {
-			return err
+// Broadcasts a message to all "live" clients. Prunes the list of active clients as a side effect.
+func (cp *ClientPool) Send(message HerdCommand) error {
+	wireMessage, err := proto.Marshal(&message)
+	if err != nil {
+		return err
+	}
+
+	now := time.Now().Unix()
+
+	cp.mux.Lock()
+	defer cp.mux.Unlock()
+
+	for e := cp.clients.Front(); e != nil; e = e.Next() {
+		client := e.Value.(*Client)
+
+		if now-client.Timestamp < heartbeatTTL {
+			_, err := cp.server.WriteTo(wireMessage, client.Addr)
+			if err != nil {
+				return err
+			}
+		} else {
+			// this client has expired. remove it from the pool
+			cp.clients.Remove(e)
+			delete(cp.clientMap, client.Addr)
 		}
 
-		log.Printf("packet-written: message=%s to=%s\n", message, addr.String())
+		log.Printf("packet-written: message=%s to=%s\n", message.String(), client.Addr.String())
 	}
 
 	return nil
@@ -70,25 +89,20 @@ func (cp *ClientPool) Listen() (channel chan error) {
 				return
 			}
 
+			// 1. check the map. if exists then remove existing linked list node.
+			// 2. prepend new node with Timestamp, Addr to the linked list
+			// 3. add entry to map of Addrs pointing to this new node
 			cp.mux.Lock()
-			cp.Clients[addr] = time.Now().Unix()
+			existingPointer, ok := cp.clientMap[addr]
+			if ok {
+				cp.clients.Remove(existingPointer)
+			}
+
+			newNode := cp.clients.PushFront(Client{Addr: addr, Timestamp: time.Now().Unix()})
+			cp.clientMap[addr] = newNode
 			cp.mux.Unlock()
 		}
 	}()
 
 	return doneChan
-}
-
-func (cp *ClientPool) liveClients() []net.Addr {
-	cp.mux.Lock()
-	defer cp.mux.Unlock()
-
-	clients := make([]net.Addr, 0)
-	now := time.Now().Unix()
-	for addr := range cp.Clients {
-		if now-cp.Clients[addr] < heartbeatTTL {
-			clients = append(clients, addr)
-		}
-	}
-	return clients
 }

@@ -2,20 +2,16 @@ package main
 
 import (
 	"log"
+	"time"
 
 	"github.com/rakyll/portmidi"
 )
 
-// Emitter:
-// - runs in a loop in its own goroutine
-// - polls the same go channel that MidiInput is writing to
-// - depending on the message itself, writes each message out to one or more clients
-
-// HerdMidiMessage:
-// - formed right away by MidiInput when it comes in, sent out to clients by Emitter
-// - contains raw midi message, timestamp of when it was received by MidiInput
+const messageDeadline = 100 // milliseconds
 
 func main() {
+	start := time.Now()
+
 	err := portmidi.Initialize()
 	if err != nil {
 		log.Fatal(err)
@@ -43,7 +39,16 @@ func main() {
 			return
 		case midiEvent := <-midiChan:
 			log.Println(midiEvent)
-			err := cp.Send(string(midiEvent.Data1))
+
+			msSinceStart := int64(time.Since(start) / time.Millisecond)
+
+			message := HerdCommand{
+				Status:   midiEvent.Status,
+				Data1:    midiEvent.Data1,
+				Data2:    midiEvent.Data2,
+				Deadline: msSinceStart + messageDeadline,
+			}
+			err := cp.Send(message)
 			if err != nil {
 				log.Fatal(err)
 			}

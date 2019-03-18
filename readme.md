@@ -17,3 +17,8 @@ will be broadcast to this client. The server will consider the client to be "dea
 unless at least one packet arrives every 10 seconds. It can be revived at any time
 by typing a character in the `socat` session.
 
+### Building It
+
+Protocol Buffers are used for serialization. Any changes to `.proto` files will require
+the go classes to be regenerated. With `protoc` and the go protobuf generator installed,
+run `protoc --go_out ./ *.proto` after any updates to the `.proto` files.
