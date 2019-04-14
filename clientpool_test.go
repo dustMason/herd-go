@@ -37,9 +37,6 @@ func TestClientPool(t *testing.T) {
 		clients[i] = conn
 	}
 
-	// TODO there is a race condition bug! this is a workaround...
-	time.Sleep(100 * time.Millisecond)
-
 	// send them each 2 messages
 	for i := 0; i < 2; i++ {
 		message := HerdCommand{
@@ -53,9 +50,6 @@ func TestClientPool(t *testing.T) {
 			log.Fatal(err)
 		}
 	}
-
-	// TODO there is a race condition bug! this is a workaround...
-	time.Sleep(100 * time.Millisecond)
 
 	// assert that each client got both commands correctly
 	for i := 0; i < 4; i++ {
@@ -76,9 +70,6 @@ func TestClientPool(t *testing.T) {
 		}
 	}
 
-	// TODO there is a race condition bug! this is a workaround...
-	time.Sleep(100 * time.Millisecond)
-
 	// have 2 clients say bye
 	for i := 0; i < 2; i++ {
 		conn := clients[i]
@@ -88,8 +79,8 @@ func TestClientPool(t *testing.T) {
 		}
 	}
 
-	// TODO there is a race condition bug! this is a workaround...
-	time.Sleep(100 * time.Millisecond)
+	// this avoids a mysterious bug with SetReadDeadline below in the dead client check
+	time.Sleep(1 * time.Millisecond)
 
 	// send them all a message
 	message := HerdCommand{
@@ -103,15 +94,12 @@ func TestClientPool(t *testing.T) {
 		t.Errorf("Some error %v\n", err)
 	}
 
-	// TODO there is a race condition bug! this is a workaround...
-	time.Sleep(100 * time.Millisecond)
-
 	fmt.Println("--- checking dead clients")
 
 	// assert that first 2 clients did not get messages
 	for i := 0; i < 2; i++ {
 		conn := clients[i]
-		_ = conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+		_ = conn.SetReadDeadline(time.Now().Add(10 * time.Millisecond))
 		p := make([]byte, 2048)
 		_, err := conn.Read(p)
 		e, _ := err.(net.Error)
