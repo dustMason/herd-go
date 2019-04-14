@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"log"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,7 +16,7 @@ const heartbeatTTL = 10 // seconds
 
 type ClientPool struct {
 	clients   list.List
-	clientMap map[net.Addr]*list.Element
+	clientMap map[string]*list.Element
 	server    net.PacketConn
 	mux       sync.Mutex
 }
@@ -35,7 +36,7 @@ func MakeClientPool(address string) (ClientPool, error) {
 	log.Printf("Listening at %s\n", address)
 
 	return ClientPool{
-		clientMap: make(map[net.Addr]*list.Element),
+		clientMap: make(map[string]*list.Element),
 		clients:   *list.New(),
 		server:    pc,
 	}, nil
@@ -67,7 +68,7 @@ func (cp *ClientPool) Send(message HerdCommand) error {
 		} else {
 			// this client has expired. remove it from the pool
 			cp.clients.Remove(e)
-			delete(cp.clientMap, client.Addr)
+			delete(cp.clientMap, client.Addr.String())
 		}
 
 		log.Printf("packet-written: message=%s to=%s\n", message.String(), client.Addr.String())
@@ -96,13 +97,17 @@ func (cp *ClientPool) Listen() (channel chan error) {
 			// 2. prepend new node with Timestamp, Addr to the linked list
 			// 3. add entry to map of Addrs pointing to this new node
 			cp.mux.Lock()
-			existingPointer, ok := cp.clientMap[addr]
+			existingPointer, ok := cp.clientMap[addr.String()]
 			if ok {
 				cp.clients.Remove(existingPointer)
 			}
 
-			newNode := cp.clients.PushFront(Client{Addr: addr, Timestamp: time.Now().Unix()})
-			cp.clientMap[addr] = newNode
+			// clients can send "bye" if they want to proactively disconnect. in that case,
+			// do not add them back to the pool.
+			if !strings.HasPrefix(string(buffer), "bye") {
+				newNode := cp.clients.PushFront(Client{Addr: addr, Timestamp: time.Now().Unix()})
+				cp.clientMap[addr.String()] = newNode
+			}
 			cp.mux.Unlock()
 		}
 	}()
