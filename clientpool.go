@@ -54,7 +54,10 @@ func (cp *ClientPool) Send(message HerdCommand) error {
 	defer cp.mux.Unlock()
 
 	for e := cp.clients.Front(); e != nil; e = e.Next() {
-		client := e.Value.(*Client)
+		if e.Value == nil {
+			continue
+		}
+		client := e.Value.(Client)
 
 		if now-client.Timestamp < heartbeatTTL {
 			_, err := cp.server.WriteTo(wireMessage, client.Addr)
